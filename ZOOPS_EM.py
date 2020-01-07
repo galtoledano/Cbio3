@@ -105,6 +105,17 @@ def write_profile(emission, p, q):
     motif_profile.close()
 
 
+def em(seq_array, tau, emission, k):
+    forward = []
+    backward = []
+    while True:
+        for seq in seq_array:
+            forward.append(forward_algorithm(seq, tau, emission, k))
+            backward.append(backward_algorithm(seq, tau, emission, k))
+        # E sage:
+
+
+
 if __name__ == "__main__":
     # main()
     seed = "AGGC"
@@ -112,9 +123,9 @@ if __name__ == "__main__":
     q = init_q(seq_array, seed)
     p = 0.1
     emission = init_emission(seed, 0.1)
+    write_profile(emission, p, q)
     mat, k = edit_emission(emission)
     tau = init_tau(k, p, q)
     for i in range(len(seq_array)):
         seq_array[i] = edit_sequence(seq_array[i])
-    write_profile(emission, p, q)
-
+    em(seq_array, tau, mat, k)
