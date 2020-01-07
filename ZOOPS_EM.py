@@ -114,7 +114,7 @@ def em(seq_array, tau, emission, k):
             forward.append(forward_algorithm(seq, tau, emission, k))
             backward.append(backward_algorithm(seq, tau, emission, k))
         # E sage:
-        N_k_x = np.zeros((k, 4))
+        N_k_x = np.zeros((k, 6))
         N_k_l = np.zeros((k, k))
         for seq_index in range(len(seq_array)):
             for letter_index in range(1, len(seq_array[seq_index]) - 1):  # todo : skip ^ and $ ?
@@ -135,7 +135,7 @@ def em(seq_array, tau, emission, k):
                         f = forward[seq_index][state1][letter_index - 1]
                         b = backward[seq_index][state2][letter_index]
                         t = tau[state1][state2]
-                        e = emission[state2][letter_index]
+                        e = emission[state2][converting_dict[seq[letter_index]]]
                         NKL = f + b + t + e - pos_val
                         N_k_l[state1][state2] = logsumexp([N_k_l[state1][state2], NKL])
 
@@ -144,9 +144,9 @@ def em(seq_array, tau, emission, k):
                 emission = N_k_x - e_sums_vec
 
                 # update tau
-                t_sums_vec = np.array(logsumexp(N_k_l, axis=1)).reshape((-1,1))
+                t_sums_vec = np.array(logsumexp(N_k_l, axis=1)).reshape((-1, 1))
                 tau = N_k_l - t_sums_vec
-                print("YAYYYY")
+        print("YAYYYY")
 
 
 
