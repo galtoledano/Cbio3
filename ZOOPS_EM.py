@@ -108,11 +108,48 @@ def write_profile(emission, p, q):
 def em(seq_array, tau, emission, k):
     forward = []
     backward = []
-    while True:
+    # while True:
+    for g in range(5):
         for seq in seq_array:
             forward.append(forward_algorithm(seq, tau, emission, k))
             backward.append(backward_algorithm(seq, tau, emission, k))
         # E sage:
+        N_k_x = np.zeros((k, 4))
+        N_k_l = np.zeros((k, k))
+        for seq_index in range(len(seq_array)):
+            for letter_index in range(1, len(seq_array[seq_index]) - 1):  # todo : skip ^ and $ ?
+                # calculate N_k_x
+                seq = seq_array[seq_index]
+                posterior_mat = forward[seq_index] + backward[seq_index]
+                pos_val = posterior_mat[-1][-1]  # todo : is this the real pos value ?
+                vec = posterior_mat[:, letter_index] - pos_val
+                curr_letter = converting_dict[seq[letter_index]]
+                temp = logsumexp(N_k_x[:, curr_letter], vec)
+                N_k_x[:, curr_letter] = temp
+
+                # calculate N_k_l
+                for state1 in range(k):
+                    for state2 in range(k):
+                        f = forward[seq_index][state1][letter_index - 1]
+                        b = backward[seq_index][state2][letter_index]
+                        t = tau[state1][state2]
+                        e = emission[state2][letter_index]
+                        NKL = f + b + t + e - pos_val
+                        N_k_l[state1][state2] = logsumexp(N_k_x[state1][state2], NKL)
+
+                # update emission
+                e_sums_vec = np.zeros((1, len(N_k_x)))
+                for i in range(len(N_k_x)):
+                    e_sums_vec[i] = logsumexp(N_k_x[i], e_sums_vec[i])
+                emission = N_k_x - e_sums_vec
+
+                # update tau
+                t_sums_vec = np.zeros((1, k))
+                for i in range(k):
+                    t_sums_vec[i] = logsumexp(N_k_l[i], t_sums_vec[i])
+                tau = N_k_l - t_sums_vec
+        print("YAYYYY")
+
 
 
 
