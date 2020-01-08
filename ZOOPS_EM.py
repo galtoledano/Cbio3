@@ -5,16 +5,6 @@ import numpy as np
 from scipy.special import logsumexp
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('fasta', help='File path with list of sequences (e.g. yeastGenes.fasta)')
-    parser.add_argument('seed', help='Guess for the motif (e.g. ATTA)')
-    parser.add_argument('p', type=float, help='Initial guess for the p transition probability (e.g. 0.01)')
-    parser.add_argument('alpha', type=float, help='Softening parameter for the initial profile (e.g. 0.1)')
-    parser.add_argument('convergenceThr', type=float, help='ll improvement threshold for the stopping condition'
-                                                           ' (e.g. 0.1)')
-    return parser.parse_args()
-
 
 def init_q(seq_lst, seed):
     counter = 0
@@ -73,27 +63,22 @@ def edit_emission(mat):
     mat = np.insert(mat, 5, dollar_vector, axis=1)
     return mf.log_marix(mat), k
 
-def main():
-    args = parse_args()
+
+def write_ll(ll_history):
+    file = open("ll_history.txt", "w")
+    for h in ll_history:
+        file.write(str(h) + "\n")
+    file.close()
 
 
-    # Initialize the model:
-    #   Transitions:
-    #      - p is given
-    #      - calculate q from args.fasta
-    #   Emissions:
-    #      - use args.seed and args.alpha for the M states probabilities
-
-
-    # Run EM
-    # while ll's improvement < args.convergenceThr:
-    #   perform EM step
-
-    # Dump 3 files:
-    #   - ll_history.txt
-    #   - motif_profile.txt
-    #   - motif_positions.txt
-
+def write_position(seq_array, tau, emission):
+    file = open("motif_position.txt", "w")
+    for i in range(len(seq_array)):
+        v_mat, t_mat = mf.viterbi(seq_array[i], tau, emission)
+        viterbi_seq = mf.trace_viterbi(v_mat, t_mat)
+        file.write(str(viterbi_seq.find(mf.MOTIF)))
+        file.write("\n")
+    file.close()
 
 
 def write_profile(emission, p, q):
@@ -107,17 +92,21 @@ def write_profile(emission, p, q):
     motif_profile.close()
 
 
-def em(seq_array, tau, emission, k, seed):
+def em(seq_array, tau, emission, k, seed, threshold):
     forward = []
     backward = []
+    ll_history = []
+    prev_ll = np.NINF
     N_k_x = np.zeros((k, 6))
     N_k_x[0][4], N_k_x[k-1][5] = 1, 1
     N_k_x = mf.log_marix(N_k_x)
     N_k_l = mf.log_marix(np.zeros((k, k)))
-    defult_emm, _ = edit_emission(init_emission(seed, 0.25))
+    default_emm, _ = edit_emission(init_emission(seed, 0.25))
+    
 
-    # while True:
-    for g in range(5):
+    while True:
+        current_ll = 0
+        # for g in range(5):
         for seq in seq_array:
             forward.append(mf.forward_algorithm(seq, tau, emission, k))
             backward.append(mf.backward_algorithm(seq, tau, emission, k))
@@ -127,6 +116,7 @@ def em(seq_array, tau, emission, k, seed):
             for letter_index in range(1, len(seq_array[seq_index]) - 1):  # todo : skip ^ and $ ?
                 # calculate N_k_x
                 pos_val = forward[seq_index][-1][-1]  # todo : is this the real pos value ?
+                current_ll += pos_val
                 posterior_mat = forward[seq_index] + backward[seq_index]
                 vec = posterior_mat[:, letter_index] - pos_val
                 curr_letter = mf.converting_dict[seq[letter_index]]
@@ -142,17 +132,20 @@ def em(seq_array, tau, emission, k, seed):
                         b = backward[seq_index][state2][letter_index]
                         t = tau[state1][state2]
                         if state2 <= 1 or state2 >= k-1:
-                            e = defult_emm[state2][mf.converting_dict[seq[letter_index]]]
+                            e = default_emm[state2][mf.converting_dict[seq[letter_index]]]
                         else:
                             e = emission[state2][mf.converting_dict[seq[letter_index]]]
-                        NKL = f + b + t + e - pos_val
+                        with np.errstate(all='ignore'):
+                            NKL = f + b + t + e - pos_val
                         N_k_l[state1][state2] = logsumexp([N_k_l[state1][state2], NKL])
 
                 # update emission
                 e_sums_vec = np.array(logsumexp(N_k_x, axis=1)).reshape((-1, 1))
-                emission = N_k_x - e_sums_vec
+                with np.errstate(all='ignore'):
+                    emission = N_k_x - e_sums_vec
                 v = np.full((len(emission), 1), -np.inf)
                 emission = np.where(np.isnan(emission), v, emission)
+
 
                 # update tau
 
@@ -163,22 +156,56 @@ def em(seq_array, tau, emission, k, seed):
                 p = N_k_l[1][2]
                 q = N_k_l[0][1]
                 tau = mf.init_tau(k, p, q)
+                # v = np.full((len(tau), 1), -np.inf)
+                # tau = np.where(np.isnan(tau), v, tau)
+        ll_history.append(current_ll)
+        if current_ll - prev_ll <= threshold:
+            print(ll_history)
+            return emission, tau, ll_history
+        else:
+            prev_ll = current_ll
 
 
-                # print("iter with " + str(letter_index))
-                # print(tau)
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('fasta', help='File path with list of sequences (e.g. yeastGenes.fasta)')
+    parser.add_argument('seed', help='Guess for the motif (e.g. ATTA)')
+    parser.add_argument('p', type=float, help='Initial guess for the p transition probability (e.g. 0.01)')
+    parser.add_argument('alpha', type=float, help='Softening parameter for the initial profile (e.g. 0.1)')
+    parser.add_argument('convergenceThr', type=float, help='ll improvement threshold for the stopping condition'
+                                                           ' (e.g. 0.1)')
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+    fasta_file_name, seed, p = args.fasta, args.seed, args.p
+    alpha, threshold = args.alpha, args.convergenceThr
+    seqs_array = read_fasta(fasta_file_name)
+    q = init_q(seqs_array, seed)
+    emission_mat = init_emission(seed, alpha)
+    mat, k = edit_emission(emission_mat)
+    tau_mat = mf.init_tau(k, p, q)
+    write_position(seqs_array, tau_mat, mat)
+    for i in range(len(seqs_array)):
+        seqs_array[i] = mf.edit_sequence(seqs_array[i])
+    emission, tau, ll_history = em(seqs_array, tau_mat, mat, k, seed, threshold)
+    write_ll(ll_history)
 
 
 if __name__ == "__main__":
-    # main()
-    seed = "AGGC"
-    seq_array = read_fasta("gal<3.fasta")
-    q = init_q(seq_array, seed)
-    p = 0.1
-    emission = init_emission(seed, 0.1)
-    write_profile(emission, p, q)
-    mat, k = edit_emission(emission)
-    tau = mf.init_tau(k, p, q)
-    for i in range(len(seq_array)):
-        seq_array[i] = mf.edit_sequence(seq_array[i])
-    em(seq_array, tau, mat, k, seed)
+    main()
+    # seed = "AGGC"
+    # seq_array = read_fasta("gal<3.fasta")
+    # q = init_q(seq_array, seed)
+    # p = 0.1
+    # emission = init_emission(seed, 0.1)
+    # write_profile(emission, p, q)
+    # mat, k = edit_emission(emission)
+    # tau = mf.init_tau(k, p, q)
+    # write_position(seq_array, tau, mat)
+    # for i in range(len(seq_array)):
+    #     seq_array[i] = mf.edit_sequence(seq_array[i])
+    # emission, tau, ll_history = em(seq_array, tau, mat, k, seed, 100)
+    # write_ll(ll_history)
+
+

@@ -29,7 +29,7 @@ def log_marix(matrix):
     :param matrix: the given matrix
     :return: the matrix after the log operation
     """
-    with np.errstate(divide='ignore'):
+    with np.errstate(all='ignore'):
         matrix = np.log(matrix)
         return matrix
 
