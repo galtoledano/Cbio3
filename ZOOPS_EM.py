@@ -113,6 +113,7 @@ def em(seq_array, tau, emission, k, seed, threshold):
         # E sage:
         for seq_index in range(len(seq_array)):
             seq = seq_array[seq_index]
+            forward_mat = forward[seq_index]
             for letter_index in range(1, len(seq_array[seq_index]) - 1):  # todo : skip ^ and $ ?
                 # calculate N_k_x
                 pos_val = forward[seq_index][-1][-1]  # todo : is this the real pos value ?
@@ -124,20 +125,20 @@ def em(seq_array, tau, emission, k, seed, threshold):
                     N_k_x[:, curr_letter][i] = logsumexp([N_k_x[:, curr_letter][i], vec[i]])
                 # temp = logsumexp([N_k_x[:, curr_letter], vec])
                 # N_k_x[:, curr_letter] = temp
-
+                forward_mat[:, curr_letter] += emission[:, mf.converting_dict[seq[seq_index]]]
                 # calculate N_k_l
-                for state1 in range(k):
-                    for state2 in range(k):
-                        f = forward[seq_index][state1][letter_index - 1]
-                        b = backward[seq_index][state2][letter_index]
-                        t = tau[state1][state2]
-                        if state2 <= 1 or state2 >= k-1:
-                            e = default_emm[state2][mf.converting_dict[seq[letter_index]]]
-                        else:
-                            e = emission[state2][mf.converting_dict[seq[letter_index]]]
-                        with np.errstate(all='ignore'):
-                            NKL = f + b + t + e - pos_val
-                        N_k_l[state1][state2] = logsumexp([N_k_l[state1][state2], NKL])
+                # for state1 in range(k):
+                #     for state2 in range(k):
+                #         f = forward[seq_index][state1][letter_index - 1]
+                #         b = backward[seq_index][state2][letter_index]
+                #         t = tau[state1][state2]
+                #         if state2 <= 1 or state2 >= k-1:
+                #             e = default_emm[state2][mf.converting_dict[seq[letter_index]]]
+                #         else:
+                #             e = emission[state2][mf.converting_dict[seq[letter_index]]]
+                #         with np.errstate(all='ignore'):
+                #             NKL = f + b + t + e - pos_val
+                #         N_k_l[state1][state2] = logsumexp([N_k_l[state1][state2], NKL])
 
                 # update emission
                 e_sums_vec = np.array(logsumexp(N_k_x, axis=1)).reshape((-1, 1))
