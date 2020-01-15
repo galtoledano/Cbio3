@@ -119,7 +119,7 @@ def trace_viterbi(v_matrix, t_matrix):
     last_col = v_matrix[:, len(v_matrix[0]) - 1]
     curr = np.where(last_col == max(last_col))[0][0]
     length = len(v_matrix) - 1
-    for letter in range(len(v_matrix[0]) - 1, 1, -1):  # todo
+    for letter in range(len(v_matrix[0]) - 1, 1, -1):
         curr = t_matrix[int(curr)][letter]
         if curr == 0 or curr == 1 or curr == length or curr == length - 1:
             viterbi_seq = BACKGROUND + viterbi_seq

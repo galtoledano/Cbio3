@@ -72,7 +72,7 @@ def write_ll(ll_history):
     file.close()
 
 
-def write_position(seq_array, tau, emission):
+def write_position(seq_array, tau, emission, k):
     file = open("motif_position.txt", "w")
     for i in range(len(seq_array)):
         v_mat, t_mat = mf.viterbi(seq_array[i], tau, emission)
@@ -83,44 +83,36 @@ def write_position(seq_array, tau, emission):
 
 
 def write_profile(emission, p, q):
-    motif_profile = open("motif_profile.txt", "w")
-    emission = np.exp(emission)
-    for i in range(2, len(emission)-2):
-        for j in range(len(emission[i])-2):
-            motif_profile.write(str(round(emission[i][j], 2)) + "\t")
-        motif_profile.write("\n")
-    motif_profile.write(str(round(q, 2)) + "\n")  # p
-    motif_profile.write(str(round(p, 2)) + " \n")  # q
+    motif_profile = open("motif_profile.txt", "a")
+    np.savetxt("motif_profile.txt", emission, delimiter="\t", fmt="%.2f")
+    # emission = np.exp(emission)
+    # for i in range(2, len(emission)-2):
+    #     for j in range(len(emission[i])-2):
+    #         motif_profile.write(str(round(emission[i][j], 2)) + "\t")
+    #     motif_profile.write("\n")
+    motif_profile.write(str(round(q, 2)) + "\n")  # q
+    motif_profile.write(str(round(p, 2)) + " \n")  # p
     motif_profile.close()
 
 
-def em(seq_array, tau, emission, k, seed, threshold, alpha):
+def em(seq_array, tau, emission, k, threshold):
     ll_history = []
     prev_ll = None
-    # N_k_x = mf.log_marix(init_emission(seed, alpha))
     N_k_x = np.full((k-4, 4), np.NINF)
-
     N_k_l = np.full((k, k), np.NINF)
-    i = 0
     while True:
-        print()
         current_ll = 0
 
         for seq_index in range(len(seq_array)):
             seq = seq_array[seq_index]
             forward_mat = mf.forward_algorithm(seq, tau, emission, k)
             backward_mat = mf.backward_algorithm(seq, tau, emission, k)
-            pos_val = forward_mat[-1][-1]  # todo : is this the real pos value ?
+            pos_val = forward_mat[-1][-1]
             current_ll += pos_val
-            # print("current ll : " + str(current_ll))
 
-            posterior_mat = forward_mat + backward_mat
-            # print(current_ll)
-            # new_f = forward_mat[2:-2, 1:-1]
-            # new_b = backward_mat[2:-2, 1:-1]
             new_f = forward_mat[2:-2, :]
             new_b = backward_mat[2:-2, :]
-            for letter_index in range(len(seq_array[seq_index])):  # todo : skip ^ and $ ?
+            for letter_index in range(len(seq_array[seq_index])):
                 curr_letter = mf.converting_dict[seq[letter_index]]
                 if curr_letter == 4 or curr_letter == 5:
                     N_k_l = update_n_k_l(N_k_l, backward_mat, curr_letter, emission, forward_mat, letter_index, pos_val,
@@ -135,11 +127,6 @@ def em(seq_array, tau, emission, k, seed, threshold, alpha):
                 N_k_l = update_n_k_l(N_k_l, backward_mat, curr_letter, emission, forward_mat, letter_index, pos_val,
                                      tau)
 
-        if prev_ll is not None and (current_ll - prev_ll <= threshold):
-            # print(ll_history)
-            return emission, tau, ll_history, p, q
-
-        prev_ll = current_ll
         ll_history.append(current_ll)
 
         # update emission
@@ -147,18 +134,23 @@ def em(seq_array, tau, emission, k, seed, threshold, alpha):
         emission[2:-2, :-2] = N_k_x - e_sums_vec
 
         # update tau
-        n = np.logaddexp(N_k_l[1][2], N_k_l[-2][-1])  # todo not sur id need + or logsumexp
-        # n = N_k_l[1][1] + N_k_l[-2][-1]
+        n = np.logaddexp(N_k_l[1][2], N_k_l[-2][-1])
         sum_p = logsumexp(N_k_l[[1, -2], :])
         p = np.exp(n - sum_p)
         q = np.exp(N_k_l[0][1] - logsumexp(N_k_l[0, :]))
         tau = init_tau(k, p, q)
-        print(f'iteration {i} - q: {q}, p:{p}')
-        i += 1
 
+
+        if prev_ll is not None and (current_ll - prev_ll <= threshold):
+            return emission, tau, ll_history, p, q
+
+        prev_ll = current_ll
 
 
 def update_n_k_l(N_k_l, backward_mat, curr_letter, emission, forward_mat, letter_index, pos_val, tau):
+    """
+    :return: the updated the N_k_l matrix
+    """
     f_vec = forward_mat[:, letter_index - 1]
     b_vec = backward_mat[:, letter_index]
     em_vec = emission[:, curr_letter]
@@ -174,7 +166,6 @@ def init_tau(k, p, q):  # whereas k = k + 4
     :param q: q value
     :return: tau matrix
     """
-
     tau_matrix = np.zeros((k, k))
     for row in range(2, k - 2):
         tau_matrix[row][row + 1] = 1
@@ -201,6 +192,9 @@ def parse_args():
 
 
 def main():
+    """
+    the main function
+    """
     args = parse_args()
     fasta_file_name, seed, p = args.fasta, args.seed, args.p
     alpha, threshold = args.alpha, args.convergenceThr
@@ -209,11 +203,11 @@ def main():
     emission_mat = init_emission(seed, alpha)
     emission_mat, k = edit_emission(emission_mat)
     tau_mat = mf.init_tau(k, p, q)
-    write_position(seqs_array, tau_mat, emission_mat)
     for i in range(len(seqs_array)):
         seqs_array[i] = mf.edit_sequence(seqs_array[i])
-    emission_mat, tau, ll_history, p, q = em(seqs_array, tau_mat, emission_mat, k, seed, threshold, alpha)
-    write_profile(emission_mat, p, q)
+    emission_mat, tau, ll_history, p, q = em(seqs_array, tau_mat, emission_mat, k, threshold)
+    write_position(seqs_array, tau, emission_mat, k)
+    write_profile(np.exp(emission_mat[2:-2, :-2].T), p, q)
     write_ll(ll_history)
 
 
