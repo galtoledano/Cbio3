@@ -164,6 +164,25 @@ def backward_algorithm(seq, tau_mat, emission_matrix, k):
         b_mat[:, letter - 1] = logsumexp(sum_of_cols, axis=0)
     return b_mat
 
+# def backward_algorithm(seq, transition_mat, emission_mat, k_counter):
+#     """
+#     calculate the backward table for a given seq
+#     :param seq: sequence
+#     :param emission_mat
+#     :param transition_mat
+#     :param k_counter: number of states
+#     :return: Backward table
+#     """
+#     k_dim = k_counter
+#     N = len(seq)
+#     backward_table = log_marix(np.zeros([k_dim, N]))
+#     backward_table[-1, -1] = log_marix(1)
+#     for j in range(N - 2, -1, -1):
+#         curr_letter = backward_table[:, j + 1].reshape(-1, 1)
+#         backward_table[:, j] = logsumexp(
+#             curr_letter + transition_mat.T + emission_mat[:, converting_dict[seq[j + 1]]].reshape((-1, 1)), axis=0)
+#     return backward_table
+
 
 def posterior(f_mat, b_mat, k, seq):
     """
