@@ -94,16 +94,17 @@ def write_profile(emission, p, q):
     motif_profile.close()
 
 
-def em(seq_array, tau, emission, k, seed, threshold):
+def em(seq_array, tau, emission, k, seed, threshold, alpha):
     ll_history = []
     prev_ll = None
-    default_emm, _ = edit_emission(init_emission(seed, 0.25))
+    # N_k_x = mf.log_marix(init_emission(seed, alpha))
+    N_k_x = np.full((k-4, 4), np.NINF)
+
+    N_k_l = np.full((k, k), np.NINF)
+    i = 0
     while True:
+        print()
         current_ll = 0
-        N_k_x = np.zeros((k, 6))
-        N_k_x[0][4], N_k_x[k-1][5] = 1, 1
-        N_k_x = mf.log_marix(N_k_x)
-        N_k_l = mf.log_marix(np.zeros((k, k)))
 
         for seq_index in range(len(seq_array)):
             seq = seq_array[seq_index]
@@ -111,51 +112,58 @@ def em(seq_array, tau, emission, k, seed, threshold):
             backward_mat = mf.backward_algorithm(seq, tau, emission, k)
             pos_val = forward_mat[-1][-1]  # todo : is this the real pos value ?
             current_ll += pos_val
-            print("current ll : " + str(current_ll))
+            # print("current ll : " + str(current_ll))
 
             posterior_mat = forward_mat + backward_mat
             # print(current_ll)
-
-            for letter_index in range(1, len(seq_array[seq_index]) - 1):  # todo : skip ^ and $ ?
-
-                # calculate N_k_x
-                vec = posterior_mat[:, letter_index] - pos_val
+            # new_f = forward_mat[2:-2, 1:-1]
+            # new_b = backward_mat[2:-2, 1:-1]
+            new_f = forward_mat[2:-2, :]
+            new_b = backward_mat[2:-2, :]
+            for letter_index in range(len(seq_array[seq_index])):  # todo : skip ^ and $ ?
                 curr_letter = mf.converting_dict[seq[letter_index]]
-                for i in range(len(vec)):
-                    N_k_x[:, curr_letter][i] = logsumexp([N_k_x[:, curr_letter][i], vec[i]])
+                if curr_letter == 4 or curr_letter == 5:
+                    N_k_l = update_n_k_l(N_k_l, backward_mat, curr_letter, emission, forward_mat, letter_index, pos_val,
+                                         tau)
+                    continue
 
-                # calculate N_k_l
-                f_vec = forward_mat[:, mf.converting_dict[seq[letter_index - 1]]]
-                b_vec = backward_mat[:, curr_letter]
-                em_vec = emission[:, curr_letter]
-                new_N_k_L = f_vec + b_vec + em_vec + tau - pos_val
-                N_k_l = np.logaddexp(N_k_l, new_N_k_L)
+            # calculate N_k_x
+                post_vec = new_f[:, letter_index] + new_b[:, letter_index] - pos_val
+                N_k_x[:, curr_letter] = np.logaddexp(N_k_x[:, curr_letter], post_vec)
 
+            # calculate N_k_l
+                N_k_l = update_n_k_l(N_k_l, backward_mat, curr_letter, emission, forward_mat, letter_index, pos_val,
+                                     tau)
+
+        if prev_ll is not None and (current_ll - prev_ll <= threshold):
+            # print(ll_history)
+            return emission, tau, ll_history, p, q
+
+        prev_ll = current_ll
         ll_history.append(current_ll)
+
         # update emission
-        a = N_k_x[:, [1, 2, 3, 4]]
-        e_sums_vec = np.array(logsumexp(a, axis=1)).reshape((-1, 1))
-        with np.errstate(all='ignore'):
-            emission[2:-2, :-2] = N_k_x[2:-2, :-2] - e_sums_vec[2:-2]
-        v = np.full((len(emission), 1), -np.inf)
-        emission = np.where(np.isnan(emission), v, emission)
+        e_sums_vec = np.array(logsumexp(N_k_x, axis=1)).reshape((-1, 1))
+        emission[2:-2, :-2] = N_k_x - e_sums_vec
 
         # update tau
-        p = N_k_l[1][2] + N_k_l[-2][-2]
-        sum_p = logsumexp(tau[:, 1]) + logsumexp(tau[:, -2])
-        p = p - sum_p
-        q = N_k_l[0][1] - logsumexp(tau[:, 1])
+        n = np.logaddexp(N_k_l[1][2], N_k_l[-2][-1])  # todo not sur id need + or logsumexp
+        # n = N_k_l[1][1] + N_k_l[-2][-1]
+        sum_p = logsumexp(N_k_l[[1, -2], :])
+        p = np.exp(n - sum_p)
+        q = np.exp(N_k_l[0][1] - logsumexp(N_k_l[0, :]))
         tau = init_tau(k, p, q)
-        print("current: " + str(current_ll))
-        print("prev: " + str(prev_ll))
-        # print(current_ll - prev_ll)
-        if prev_ll is not None and (current_ll - prev_ll <= threshold):
-            print(ll_history)
-            return emission, tau, ll_history, np.exp(p), np.exp(q)
-        else:
-            prev_ll = current_ll
+        print(f'iteration {i} - q: {q}, p:{p}')
+        i += 1
 
 
+
+def update_n_k_l(N_k_l, backward_mat, curr_letter, emission, forward_mat, letter_index, pos_val, tau):
+    f_vec = forward_mat[:, letter_index - 1]
+    b_vec = backward_mat[:, letter_index]
+    em_vec = emission[:, curr_letter]
+    N_k_l = np.logaddexp(N_k_l, (f_vec.reshape(-1, 1) + b_vec.reshape(1, -1) + tau + em_vec.reshape(1, -1) - pos_val))
+    return N_k_l
 
 
 def init_tau(k, p, q):  # whereas k = k + 4
@@ -166,8 +174,7 @@ def init_tau(k, p, q):  # whereas k = k + 4
     :param q: q value
     :return: tau matrix
     """
-    p = np.exp(p)
-    q = np.exp(q)
+
     tau_matrix = np.zeros((k, k))
     for row in range(2, k - 2):
         tau_matrix[row][row + 1] = 1
@@ -177,6 +184,7 @@ def init_tau(k, p, q):  # whereas k = k + 4
     tau_matrix[1][2] = p
     tau_matrix[k - 2][k - 2] = 1 - p
     tau_matrix[k - 2][k - 1] = p
+    tau_matrix[-1][-1] = 1
     tau_matrix = mf.log_marix(tau_matrix)
     return tau_matrix
 
@@ -204,7 +212,7 @@ def main():
     write_position(seqs_array, tau_mat, emission_mat)
     for i in range(len(seqs_array)):
         seqs_array[i] = mf.edit_sequence(seqs_array[i])
-    emission_mat, tau, ll_history, p, q = em(seqs_array, tau_mat, emission_mat, k, seed, threshold)
+    emission_mat, tau, ll_history, p, q = em(seqs_array, tau_mat, emission_mat, k, seed, threshold, alpha)
     write_profile(emission_mat, p, q)
     write_ll(ll_history)
 

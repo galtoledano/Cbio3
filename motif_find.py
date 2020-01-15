@@ -51,6 +51,7 @@ def init_tau(k, p, q):  # whereas k = k + 4
     tau_matrix[1][2] = p
     tau_matrix[k - 2][k - 2] = 1 - p
     tau_matrix[k - 2][k - 1] = p
+    tau_matrix[-1][-1] = 1
     return log_marix(tau_matrix)
 
 
