@@ -2,12 +2,13 @@ import argparse
 import motif_find as mf
 from itertools import groupby
 import numpy as np
-from functools import reduce
-
 from scipy.special import logsumexp
 
 
 def init_q(seq_lst, seed):
+    """
+    init q
+    """
     counter = 0
     for seq in seq_lst:
         if seed in seq:
@@ -38,6 +39,9 @@ def read_fasta(fasta_name):
 
 
 def init_emission(seed, alpha):
+    """
+    init the emission matrix
+    """
     emission = np.full((len(seed), 4), alpha)
     for i in range(len(seed)):
         emission[i][mf.converting_dict[seed[i]]] = 1 - (3 * alpha)
@@ -66,13 +70,19 @@ def edit_emission(mat):
 
 
 def write_ll(ll_history):
+    """
+    writing the log likelihood history text file
+    """
     file = open("ll_history.txt", "w")
     for h in ll_history:
         file.write(str(h) + "\n")
     file.close()
 
 
-def write_position(seq_array, tau, emission, k):
+def write_position(seq_array, tau, emission):
+    """
+    writing the position text file
+    """
     file = open("motif_position.txt", "w")
     for i in range(len(seq_array)):
         v_mat, t_mat = mf.viterbi(seq_array[i], tau, emission)
@@ -83,19 +93,21 @@ def write_position(seq_array, tau, emission, k):
 
 
 def write_profile(emission, p, q):
+    """
+    writing the profile text file
+    """
     motif_profile = open("motif_profile.txt", "a")
     np.savetxt("motif_profile.txt", emission, delimiter="\t", fmt="%.2f")
-    # emission = np.exp(emission)
-    # for i in range(2, len(emission)-2):
-    #     for j in range(len(emission[i])-2):
-    #         motif_profile.write(str(round(emission[i][j], 2)) + "\t")
-    #     motif_profile.write("\n")
     motif_profile.write(str(round(q, 2)) + "\n")  # q
     motif_profile.write(str(round(p, 2)) + " \n")  # p
     motif_profile.close()
 
 
 def em(seq_array, tau, emission, k, threshold):
+    """
+    runs the EM algorithm.
+    :return: the learned parameters
+    """
     ll_history = []
     prev_ll = None
     N_k_x = np.full((k-4, 4), np.NINF)
@@ -127,7 +139,6 @@ def em(seq_array, tau, emission, k, threshold):
                 N_k_l = update_n_k_l(N_k_l, backward_mat, curr_letter, emission, forward_mat, letter_index, pos_val,
                                      tau)
 
-        ll_history.append(current_ll)
 
         # update emission
         e_sums_vec = np.array(logsumexp(N_k_x, axis=1)).reshape((-1, 1))
@@ -140,10 +151,10 @@ def em(seq_array, tau, emission, k, threshold):
         q = np.exp(N_k_l[0][1] - logsumexp(N_k_l[0, :]))
         tau = init_tau(k, p, q)
 
-
         if prev_ll is not None and (current_ll - prev_ll <= threshold):
             return emission, tau, ll_history, p, q
 
+        ll_history.append(current_ll)
         prev_ll = current_ll
 
 
@@ -206,7 +217,7 @@ def main():
     for i in range(len(seqs_array)):
         seqs_array[i] = mf.edit_sequence(seqs_array[i])
     emission_mat, tau, ll_history, p, q = em(seqs_array, tau_mat, emission_mat, k, threshold)
-    write_position(seqs_array, tau, emission_mat, k)
+    write_position(seqs_array, tau, emission_mat)
     write_profile(np.exp(emission_mat[2:-2, :-2].T), p, q)
     write_ll(ll_history)
 
